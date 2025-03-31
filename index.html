@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerador de INSERTs SQL</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .json-input { width: 100%; height: 100px; margin-bottom: 10px; }
+        .container { max-width: 600px; margin: auto; text-align: center; }
+        .output-container { position: relative; text-align: left; margin-top: 10px; }
+        .output { white-space: pre-wrap; background: #f4f4f4; padding: 10px; min-height: 50px; border-radius: 5px; font-family: monospace; }
+        .copy-btn { padding: 5px 10px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 3px; transition: background 0.3s; }
+        .copy-btn.copied { background: #28a745; } /* Verde quando copiado */
+        .navigation { display: flex; justify-content: center; gap: 10px; margin-top: 10px; }
+        .query-container { margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Gerador de INSERTs SQL</h2>
+        
+        <div id="json-container">
+            <textarea class="json-input" placeholder="Cole o JSON aqui" oninput="resetCopyState()"></textarea>
+        </div>
+        <button onclick="addJsonInput()">+ Adicionar JSON</button>
+        <button onclick="generateSQL()">Gerar SQL</button>
+        
+        <h3>SQL Gerado:</h3>
+        <div id="output-container"></div>
+        
+        <div class="navigation">
+            <button onclick="prevSQL()">← Anterior</button>
+            <button onclick="nextSQL()">Próximo →</button>
+        </div>
+    </div>
+
+    <script>
+        let sqlResults = [];
+        let copiedStatus = [];
+        let currentIndex = 0;
+
+        function addJsonInput() {
+            let container = document.getElementById("json-container");
+            let textarea = document.createElement("textarea");
+            textarea.className = "json-input";
+            textarea.placeholder = "Cole outro JSON aqui";
+            textarea.oninput = resetCopyState;
+            container.appendChild(textarea);
+        }
+
+        function generateSQL() {
+            let tableName = document.getElementById("table-name").value.trim();
+            if (!tableName) {
+                alert("Por favor, selecione o nome da tabela.");
+                return;
+            }
+
+            let jsonInputs = document.querySelectorAll(".json-input");
+            sqlResults = [];
+            copiedStatus = [];
+            currentIndex = 0;
+
+            jsonInputs.forEach(input => {
+                try {
+                    let data = JSON.parse(input.value);
+                    if (!Array.isArray(data)) data = [data];
+                    let queries = [];
+                    
+                    data.forEach(record => {
+                        let columns = Object.keys(record).join(", ");
+                        let values = Object.values(record).map(v => 
+                            typeof v === 'string' ? `'${v}'` : v
+                        ).join(", ");
+                        
+                        queries.push({
+                            sql1: `INSERT INTO base1_${tableName} (${columns}) VALUES (${values});`,
+                            sql2: `INSERT INTO base2_${tableName} (${columns}) VALUES (${values});`,
+                            sql3: `INSERT INTO base3_${tableName} (${columns}) VALUES (111});`
+                        });
+                    });
+                    
+                    sqlResults.push(queries);
+                    copiedStatus.push(new Array(queries.length).fill([false, false, false])); // Inicializa com 3 flags falsas para cada query
+                } catch (e) {
+                    alert("Erro ao processar JSON: " + e.message);
+                }
+            });
+
+            updateSQLDisplay();
+        }
+
+        function updateSQLDisplay() {
+            let outputContainer = document.getElementById("output-container");
+            outputContainer.innerHTML = '';
+
+            if (sqlResults.length > 0) {
+                sqlResults[currentIndex].forEach((query, index) => {
+                    let queryDiv = document.createElement("div");
+                    queryDiv.className = "query-container";
+
+                    // Query base1
+                    let queryText1 = document.createElement("div");
+                    queryText1.className = "output";
+                    queryText1.textContent = query.sql1;
+                    let copyButton1 = createCopyButton(query.sql1, index, 0);
+                    queryDiv.appendChild(queryText1);
+                    queryDiv.appendChild(copyButton1);
+
+                    // Query base2
+                    let queryText2 = document.createElement("div");
+                    queryText2.className = "output";
+                    queryText2.textContent = query.sql2;
+                    let copyButton2 = createCopyButton(query.sql2, index, 1);
+                    queryDiv.appendChild(queryText2);
+                    queryDiv.appendChild(copyButton2);
+
+                    // Query base3
+                    let queryText3 = document.createElement("div");
+                    queryText3.className = "output";
+                    queryText3.textContent = query.sql3;
+                    let copyButton3 = createCopyButton(query.sql3, index, 2);
+                    queryDiv.appendChild(queryText3);
+                    queryDiv.appendChild(copyButton3);
+
+                    outputContainer.appendChild(queryDiv);
+                });
+            } else {
+                let noSQLMessage = document.createElement("div");
+                noSQLMessage.textContent = "Nenhum SQL gerado ainda.";
+                outputContainer.appendChild(noSQLMessage);
+            }
+        }
+
+        function createCopyButton(sql, queryIndex, baseIndex) {
+            let copyButton = document.createElement("button");
+            copyButton.className = "copy-btn";
+            copyButton.textContent = copiedStatus[currentIndex][queryIndex][baseIndex] ? "Copiado!" : "Copiar";
+            copyButton.classList.toggle("copied", copiedStatus[currentIndex][queryIndex][baseIndex]);
+            copyButton.onclick = function() { copyToClipboard(copyButton, sql, queryIndex, baseIndex); };
+            return copyButton;
+        }
+
+        function copyToClipboard(button, text, queryIndex, baseIndex) {
+            navigator.clipboard.writeText(text).then(() => {
+                copiedStatus[currentIndex][queryIndex][baseIndex] = true;
+                updateSQLDisplay();
+            }).catch(err => {
+                alert("Erro ao copiar: " + err);
+            });
+        }
+
+        function prevSQL() {
+            if (currentIndex > 0) {
+                currentIndex--;
+                updateSQLDisplay();
+            }
+        }
+
+        function nextSQL() {
+            if (currentIndex < sqlResults.length - 1) {
+                currentIndex++;
+                updateSQLDisplay();
+            }
+        }
+
+        function resetCopyState() {
+            copiedStatus = new Array(sqlResults.length).fill(new Array(sqlResults[0].length).fill([false, false, false]));
+            updateSQLDisplay();
+        }
+    </script>
+</body>
+</html>
