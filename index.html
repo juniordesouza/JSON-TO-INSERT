@@ -6,167 +6,199 @@
     <title>Gerador de INSERTs SQL</title>
     <style>
         body { font-family: Arial, sans-serif; }
-        .json-input { width: 100%; height: 100px; margin-bottom: 10px; }
-        .container { max-width: 600px; margin: auto; text-align: center; }
-        .output-container { position: relative; text-align: left; margin-top: 10px; }
-        .output { white-space: pre-wrap; background: #f4f4f4; padding: 10px; min-height: 50px; border-radius: 5px; font-family: monospace; }
+        .json-input, .client-id-input { width: 80%; height: 40px; margin-bottom: 10px; }
+        .container { max-width: 800px; margin: auto; text-align: center; }
+        .output-container { display: flex; justify-content: space-between; margin-top: 10px; }
+        .output-group { flex: 1; padding: 10px; }
+        .output { white-space: pre-wrap; background: #f4f4f4; padding: 10px; min-height: 50px; border-radius: 5px; font-family: monospace; margin-bottom: 5px; transition: background 0.3s; }
+        .output.copied { background: #d4edda; }
         .copy-btn { padding: 5px 10px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 3px; transition: background 0.3s; }
-        .copy-btn.copied { background: #28a745; } /* Verde quando copiado */
+        .copy-btn.copied { background: #28a745; }
+        .remove-btn { padding: 5px; margin-left: 10px; cursor: pointer; background: #dc3545; color: white; border: none; border-radius: 3px; }
         .navigation { display: flex; justify-content: center; gap: 10px; margin-top: 10px; }
-        .query-container { margin-bottom: 10px; }
+        .query-group { display: none; }
+        .query-group.active { display: flex; }
+        .json-block { display: flex; align-items: center; gap: 10px; }
     </style>
 </head>
 <body>
     <div class="container">
         <h2>Gerador de INSERTs SQL</h2>
-        
-        <div id="json-container">
-            <textarea class="json-input" placeholder="Cole o JSON aqui" oninput="resetCopyState()"></textarea>
-        </div>
+        <div id="json-container"></div>
         <button onclick="addJsonInput()">+ Adicionar JSON</button>
         <button onclick="generateSQL()">Gerar SQL</button>
         
         <h3>SQL Gerado:</h3>
         <div id="output-container"></div>
-        
         <div class="navigation">
-            <button onclick="prevSQL()">← Anterior</button>
-            <button onclick="nextSQL()">Próximo →</button>
+            <button onclick="previousQuery()">Anterior</button>
+            <button onclick="nextQuery()">Próximo</button>
         </div>
     </div>
 
     <script>
-        let sqlResults = [];
-        let copiedStatus = [];
-        let currentIndex = 0;
+        let currentQueryIndex = 0;
+
+        // Definição de quantidade de INSERTs por base
+        const insertsPerBase = {
+            keyspaces: 8,  // 8 INSERTs para Keyspaces
+            aurora: 7,     // 7 INSERTs para Aurora
+            apis: 5        // 5 INSERTs para APIs
+        };
 
         function addJsonInput() {
             let container = document.getElementById("json-container");
+            let div = document.createElement("div");
+            div.className = "json-block";
+
+            let clientIdInput = document.createElement("input");
+            clientIdInput.className = "client-id-input";
+            clientIdInput.placeholder = "ID do Cliente";
+            clientIdInput.addEventListener("input", resetCopiedState);
+            
             let textarea = document.createElement("textarea");
             textarea.className = "json-input";
-            textarea.placeholder = "Cole outro JSON aqui";
-            textarea.oninput = resetCopyState;
-            container.appendChild(textarea);
+            textarea.placeholder = "Cole o JSON aqui";
+            textarea.addEventListener("input", resetCopiedState);
+            
+            let removeBtn = document.createElement("button");
+            removeBtn.className = "remove-btn";
+            removeBtn.textContent = "X";
+            removeBtn.onclick = function() { container.removeChild(div); };
+            
+            div.appendChild(clientIdInput);
+            div.appendChild(textarea);
+            div.appendChild(removeBtn);
+            container.appendChild(div);
         }
 
         function generateSQL() {
-            let tableName = document.getElementById("table-name").value.trim();
-            if (!tableName) {
-                alert("Por favor, selecione o nome da tabela.");
-                return;
-            }
+            let jsonBlocks = document.querySelectorAll(".json-block");
+            let outputContainer = document.getElementById("output-container");
+            outputContainer.innerHTML = '';
 
-            let jsonInputs = document.querySelectorAll(".json-input");
-            sqlResults = [];
-            copiedStatus = [];
-            currentIndex = 0;
+            jsonBlocks.forEach((block, index) => {
+                let clientId = block.querySelector(".client-id-input").value.trim();
+                let jsonInput = block.querySelector(".json-input").value.trim();
+                
+                if (!clientId || !jsonInput) {
+                    alert("Por favor, preencha todos os campos antes de gerar SQL.");
+                    return;
+                }
 
-            jsonInputs.forEach(input => {
                 try {
-                    let data = JSON.parse(input.value);
+                    let data = JSON.parse(jsonInput);
                     if (!Array.isArray(data)) data = [data];
-                    let queries = [];
                     
+                    let queryGroupDiv = document.createElement("div");
+                    queryGroupDiv.className = "query-group";
+                    if (index === 0) queryGroupDiv.classList.add("active");
+                    
+                    let categories = ["Keyspaces", "Aurora", "APIs"];
+                    let categoryDivs = {};
+                    
+                    categories.forEach(category => {
+                        let div = document.createElement("div");
+                        div.className = "output-group";
+                        div.innerHTML = `<h4>${category}</h4>`;
+                        categoryDivs[category] = div;
+                        queryGroupDiv.appendChild(div);
+                    });
+
                     data.forEach(record => {
-                        let columns = Object.keys(record).join(", ");
-                        let values = Object.values(record).map(v => 
-                            typeof v === 'string' ? `'${v}'` : v
-                        ).join(", ");
-                        
-                        queries.push({
-                            sql1: `INSERT INTO base1_${tableName} (${columns}) VALUES (${values});`,
-                            sql2: `INSERT INTO base2_${tableName} (${columns}) VALUES (${values});`,
-                            sql3: `INSERT INTO base3_${tableName} (${columns}) VALUES (111});`
+                        let columns = Object.keys(record).concat("client_id").join(", ");
+                        let values = Object.values(record).map(v => typeof v === 'string' ? `'${v}'` : v).concat(clientId).join(", ");
+
+                        // Gerar os INSERTs para cada base
+                        [{ base: "keyspaces", category: "Keyspaces", numInserts: insertsPerBase.keyspaces },
+                         { base: "aurora", category: "Aurora", numInserts: insertsPerBase.aurora },
+                         { base: "apis", category: "APIs", numInserts: insertsPerBase.apis }].forEach(({ base, category, numInserts }) => {
+                            for (let i = 0; i < numInserts; i++) { 
+                                let query = `INSERT INTO ${base}_users (${columns}) VALUES (${values});`;
+                                let queryDiv = document.createElement("div");
+                                queryDiv.className = "output";
+                                queryDiv.textContent = query;
+
+                                let copyButton = document.createElement("button");
+                                copyButton.className = "copy-btn";
+                                copyButton.textContent = "Copiar";
+                                copyButton.onclick = function () { copyToClipboard(queryDiv, copyButton, query, block); };
+
+                                categoryDivs[category].appendChild(queryDiv);
+                                categoryDivs[category].appendChild(copyButton);
+                            }
                         });
                     });
-                    
-                    sqlResults.push(queries);
-                    copiedStatus.push(new Array(queries.length).fill([false, false, false])); // Inicializa com 3 flags falsas para cada query
+                    outputContainer.appendChild(queryGroupDiv);
                 } catch (e) {
                     alert("Erro ao processar JSON: " + e.message);
                 }
             });
-
-            updateSQLDisplay();
+            currentQueryIndex = 0;
+            updateQueryVisibility();
         }
 
-        function updateSQLDisplay() {
-            let outputContainer = document.getElementById("output-container");
-            outputContainer.innerHTML = '';
+        // Função para copiar o texto para a área de transferência
+        function copyToClipboard(queryDiv, button, query, block) {
+            navigator.clipboard.writeText(query).then(() => {
+                button.textContent = "Copiado";
+                button.classList.add("copied");
+                queryDiv.classList.add("copied");
 
-            if (sqlResults.length > 0) {
-                sqlResults[currentIndex].forEach((query, index) => {
-                    let queryDiv = document.createElement("div");
-                    queryDiv.className = "query-container";
+                // Manter o botão verde até que o usuário altere o input
+                let clientIdInput = block.querySelector(".client-id-input");
+                let jsonInput = block.querySelector(".json-input");
 
-                    // Query base1
-                    let queryText1 = document.createElement("div");
-                    queryText1.className = "output";
-                    queryText1.textContent = query.sql1;
-                    let copyButton1 = createCopyButton(query.sql1, index, 0);
-                    queryDiv.appendChild(queryText1);
-                    queryDiv.appendChild(copyButton1);
+                clientIdInput.disabled = true;
+                jsonInput.disabled = true;
 
-                    // Query base2
-                    let queryText2 = document.createElement("div");
-                    queryText2.className = "output";
-                    queryText2.textContent = query.sql2;
-                    let copyButton2 = createCopyButton(query.sql2, index, 1);
-                    queryDiv.appendChild(queryText2);
-                    queryDiv.appendChild(copyButton2);
-
-                    // Query base3
-                    let queryText3 = document.createElement("div");
-                    queryText3.className = "output";
-                    queryText3.textContent = query.sql3;
-                    let copyButton3 = createCopyButton(query.sql3, index, 2);
-                    queryDiv.appendChild(queryText3);
-                    queryDiv.appendChild(copyButton3);
-
-                    outputContainer.appendChild(queryDiv);
-                });
-            } else {
-                let noSQLMessage = document.createElement("div");
-                noSQLMessage.textContent = "Nenhum SQL gerado ainda.";
-                outputContainer.appendChild(noSQLMessage);
-            }
-        }
-
-        function createCopyButton(sql, queryIndex, baseIndex) {
-            let copyButton = document.createElement("button");
-            copyButton.className = "copy-btn";
-            copyButton.textContent = copiedStatus[currentIndex][queryIndex][baseIndex] ? "Copiado!" : "Copiar";
-            copyButton.classList.toggle("copied", copiedStatus[currentIndex][queryIndex][baseIndex]);
-            copyButton.onclick = function() { copyToClipboard(copyButton, sql, queryIndex, baseIndex); };
-            return copyButton;
-        }
-
-        function copyToClipboard(button, text, queryIndex, baseIndex) {
-            navigator.clipboard.writeText(text).then(() => {
-                copiedStatus[currentIndex][queryIndex][baseIndex] = true;
-                updateSQLDisplay();
-            }).catch(err => {
-                alert("Erro ao copiar: " + err);
+                setTimeout(() => {
+                    button.textContent = "Copiar";
+                    button.classList.remove("copied");
+                    queryDiv.classList.remove("copied");
+                }, 2000);
             });
         }
 
-        function prevSQL() {
-            if (currentIndex > 0) {
-                currentIndex--;
-                updateSQLDisplay();
+        // Função para resetar o estado de copiado ao editar
+        function resetCopiedState() {
+            let buttons = document.querySelectorAll(".copy-btn");
+            buttons.forEach(button => {
+                button.textContent = "Copiar";
+                button.classList.remove("copied");
+            });
+
+            let outputs = document.querySelectorAll(".output");
+            outputs.forEach(output => {
+                output.classList.remove("copied");
+            });
+        }
+
+        // Funções de navegação entre os blocos de queries
+        function updateQueryVisibility() {
+            let queryGroups = document.querySelectorAll(".query-group");
+            queryGroups.forEach((group, index) => {
+                if (index === currentQueryIndex) {
+                    group.classList.add("active");
+                } else {
+                    group.classList.remove("active");
+                }
+            });
+        }
+
+        function nextQuery() {
+            let queryGroups = document.querySelectorAll(".query-group");
+            if (currentQueryIndex < queryGroups.length - 1) {
+                currentQueryIndex++;
+                updateQueryVisibility();
             }
         }
 
-        function nextSQL() {
-            if (currentIndex < sqlResults.length - 1) {
-                currentIndex++;
-                updateSQLDisplay();
+        function previousQuery() {
+            if (currentQueryIndex > 0) {
+                currentQueryIndex--;
+                updateQueryVisibility();
             }
-        }
-
-        function resetCopyState() {
-            copiedStatus = new Array(sqlResults.length).fill(new Array(sqlResults[0].length).fill([false, false, false]));
-            updateSQLDisplay();
         }
     </script>
 </body>
